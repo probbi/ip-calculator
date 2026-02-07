@@ -22,6 +22,15 @@ if ip_input:
         col3.metric("Broadcast", str(net.broadcast_address))
         col4.metric("Eszközök száma", net.num_addresses - 2 if net.prefixlen < 31 else 0)
 
+        st.write("") # Egy kis helyköz
+        specific_ip = ipaddress.ip_address(ip_input.split('/')[0])
+        if specific_ip == net.network_address:
+            st.info(f"📍 A megadott cím a **Hálózati cím**.")
+        elif specific_ip == net.broadcast_address:
+            st.warning(f"📍 A megadott cím a **Broadcast cím**.")
+        else:
+            st.success(f"📍 A megadott IP ({specific_ip}) egy **kiosztható host** ebben a hálózatban.")
+
         # 2. Bináris nézet
         st.subheader("🔢 Bináris megjelenítés")
         
