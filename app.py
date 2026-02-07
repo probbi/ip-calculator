@@ -1,4 +1,5 @@
-import streamlit as st import ipaddress
+import streamlit as st
+import ipaddress
 
 st.set_page_config(page_title="IP kalkulátor", page_icon="🌐", layout="wide")
 
