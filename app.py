@@ -13,6 +13,10 @@ with st.sidebar:
 
 if ip_input:
     try:
+        # Ellenőrizzük, hogy van-e benne perjel (maszk)
+        if '/' not in ip_input:
+            st.warning("⚠️ Nem adtál meg maszkot (pl. /24), így a rendszert egyetlen gépként (/32) kezelem.")
+        
         net = ipaddress.ip_network(ip_input, strict=False)
         
         # 1. Alapadatok kártyákban
@@ -21,42 +25,93 @@ if ip_input:
         col2.metric("Maszk", str(net.netmask))
         col3.metric("Broadcast", str(net.broadcast_address))
         col4.metric("Eszközök száma", net.num_addresses - 2 if net.prefixlen < 31 else 0)
+        st.write("---")
 
-        st.write("") # Egy kis helyköz
-        specific_ip = ipaddress.ip_address(ip_input.split('/')[0])
-        if specific_ip == net.network_address:
-            st.info(f"📍 A megadott cím a **Hálózati cím**.")
-        elif specific_ip == net.broadcast_address:
-            st.warning(f"📍 A megadott cím a **Broadcast cím**.")
-        else:
-            st.success(f"📍 A megadott IP ({specific_ip}) egy **kiosztható host** ebben a hálózatban.")
-
-        # 2. Bináris nézet
-        st.subheader("🔢 Bináris megjelenítés")
+        # 2. Interaktív maszkolás és Bináris nézet
+        st.subheader("🔢 Interaktív bináris vizualizáció")
         
-        def to_bin(ip):
-            return " . ".join([format(int(x), '08b') for x in str(ip).split('.')])
+        # EGYETLEN csúszka, egyedi kulccsal
+        new_prefix = st.slider("Maszk méretének módosítása (CIDR):", 
+                               min_value=0, max_value=32, 
+                               value=int(net.prefixlen),
+                               key="main_slider")
 
-        st.code(f"{to_bin(net.network_address)}  (Hálózat)\n"
-                f"{to_bin(net.netmask)}  (Maszk)\n"
-                f"{to_bin(net.broadcast_address)}  (Broadcast)", language="text")
-
-        # 3. Alhálózat generáló (Subnetting)
-        st.subheader("✂️ Alhálózatokra bontás")
-        new_prefix = st.slider("Új maszk mérete", net.prefixlen + 1, 32 if net.prefixlen < 32 else 32)
-        
-        if new_prefix > net.prefixlen:
-            subnets = list(net.subnets(new_prefix=new_prefix))
-            st.write(f"Ebből a hálózatból **{len(subnets)}** darab `/{new_prefix}`-es alhálózat hozható létre:")
+        def colored_bin(ip, cidr):
+            full_bin = "".join([format(int(x), '08b') for x in str(ip).split('.')])
+            net_part = full_bin[:cidr]
+            host_part = full_bin[cidr:]
             
-            # Csak az első 16-ot írjuk ki, hogy ne fagyassza le az oldalt óriási range-nél
-            display_subnets = [str(s) for s in subnets[:16]]
-            st.table({"Alhálózatok": display_subnets})
+            def add_dots(s, start_pos):
+                res = ""
+                for i, bit in enumerate(s):
+                    absolute_pos = start_pos + i
+                    if absolute_pos > 0 and absolute_pos % 8 == 0:
+                        res += "."
+                    res += bit
+                return res
+
+            net_final = add_dots(net_part, 0)
+            host_final = add_dots(host_part, len(net_part))
+
+            return f'<code style="font-family: monospace; font-size: 1.2em; background-color: rgba(0,0,0,0.1); padding: 8px; border-radius: 5px; display: inline-block; width: 100%;">' \
+                   f'<span style="color: #3498db; font-weight: bold;">{net_final}</span>' \
+                   f'<span style="color: #2ecc71;">{host_final}</span>' \
+                   f'</code>'
+
+        # Megjelenítés a csúszka értéke (new_prefix) alapján
+        st.markdown(f"{colored_bin(net.network_address, new_prefix)} &nbsp; **Hálózat**", unsafe_allow_html=True)
+        
+        # Kiszámoljuk az ideiglenes maszkot a csúszka alapján
+        temp_mask = ipaddress.IPv4Network(f"0.0.0.0/{new_prefix}").netmask
+        st.markdown(f"{colored_bin(temp_mask, new_prefix)} &nbsp; **Maszk**", unsafe_allow_html=True)
+        
+        st.info(f"💡 Most egy **/{new_prefix}**-es maszk hatását látod a hálózaton. Kék = Hálózati rész, Zöld = Host rész.")
+
+        st.write("---")
+
+        # 3. Alhálózatok listázása (ha a csúszka nagyobb, mint az eredeti maszk)
+        st.write("---")
+
+        # 3. Alhálózatok listázása (Kibővített adatokkal és logikával)
+        if new_prefix > net.prefixlen:
+            st.subheader(f"✂️ Alhálózatok (/{new_prefix})")
+            
+            # Kiszámoljuk az összes alhálózatot
+            subnets = list(net.subnets(new_prefix=new_prefix))
+            st.write(f"Ebből a hálózatból **{len(subnets)}** darab alhálózat jön létre:")
+            
+            # Adatok előkészítése a részletes táblázathoz
+            subnet_data = []
+            for s in subnets[:16]: # Csak az első 16-ot dolgozzuk fel a sebesség miatt
+                hosts = list(s.hosts())
+                if hosts:
+                    range_text = f"{hosts[0]} - {hosts[-1]}"
+                else:
+                    range_text = "Nincs kiosztható cím" # /31 vagy /32 esetén
+                
+                subnet_data.append({
+                    "Alhálózat": str(s.network_address),
+                    "CIDR": f"/{s.prefixlen}",
+                    "Használható IP tartomány": range_text,
+                    "Broadcast cím": str(s.broadcast_address)
+                })
+            
+            # Megjelenítés táblázatban
+            st.table(subnet_data)
+            
             if len(subnets) > 16:
-                st.warning(f"További {len(subnets) - 16} alhálózat nem került kilistázásra.")
+                st.warning(f"⚠️ További {len(subnets) - 16} alhálózat nem került kilistázásra (a böngésződ hálájára).")
+        
+        elif new_prefix < net.prefixlen:
+            # Itt tartottuk meg a számodra fontos szuperhálózat infót
+            st.warning(f"☝️ **Szuperhálózat (Supernetting) jelenség:** A választott /{new_prefix} maszk tágabb, mint az eredeti /{net.prefixlen}. Ez több hálózat összevonását jelentené.")
+        
+        else:
+            st.info("💡 A csúszka az eredeti maszk méretén áll, így nem történt alhálózatokra bontás.")
 
     except ValueError:
-        st.error("Érvénytelen formátum! Ellenőrizd az IP címet és a maszkot.")
+        # Ez a rész kapja el, ha valaki betűt ír szám helyett vagy rossz az IP formátum
+        st.error("❌ Érvénytelen formátum! Ellenőrizd az IP címet (pl. 192.168.1.1) és a maszkot (pl. /24).")
 
 st.divider()
-st.caption("Powered by Docker & Streamlit. Hosted on Contabo VPS.")
+st.caption("Powered by Docker & Streamlit. Hosted on Contabo VPS. | 2026")
