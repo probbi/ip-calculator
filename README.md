@@ -56,3 +56,6 @@ streamlit run app.py
 ```
 docker compose up -d --build
 ```
+
+### Az alkalmazás megtekinthető itt:
+[ip-kalkulátor.probbi.com](https://ip-kalkulator.probbi.com/)
