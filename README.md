@@ -58,4 +58,4 @@ docker compose up -d --build
 ```
 
 ### Az alkalmazás megtekinthető itt:
-[IP kalkulátor](https://ip-kalkulator.probbi.com/)
+[IP kalkulátor](https://ip-kalkulator.streamlit.app/)
